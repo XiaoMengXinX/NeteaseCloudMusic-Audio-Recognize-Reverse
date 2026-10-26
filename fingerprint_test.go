@@ -54,8 +54,8 @@ func TestFingerprintMatchesNode(t *testing.T) {
 // TestFingerprintOggSmoke exercises the full decode -> resample -> fingerprint
 // path on the two recorded test clips. The exact PCM (and therefore the exact
 // peak set) depends on the Opus decoder's floating-point rounding, so this
-// checks the fingerprint structure and plausibility; the oracle tests verify
-// byte equality with afp.wasm for the same PCM.
+// checks the fingerprint structure and plausibility; the development-time wasm
+// oracle verified byte equality with afp.wasm for the same PCM.
 func TestFingerprintOggSmoke(t *testing.T) {
 	for _, file := range []string{
 		"testdata/2026-10-26 16.14.32.ogg",

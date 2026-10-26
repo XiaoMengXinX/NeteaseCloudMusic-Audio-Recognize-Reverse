@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 )
 
@@ -39,11 +40,10 @@ func getDefaultEngine() *Engine {
 	return defaultEngine
 }
 
-// Fingerprint returns the base64 fingerprint ("rawdata") for the first channel
-// of the given mono PCM samples, starting offsetSec seconds in. It takes
-// FingerprintSeconds seconds of audio, point-sampled to 8 kHz like the web
-// client (linear interpolation is used when sampleRate isn't a multiple of
-// 8 kHz).
+// Fingerprint returns the base64 fingerprint ("rawdata") for the given mono
+// PCM samples, starting offsetSec seconds in. It takes FingerprintSeconds
+// seconds of audio, resampled to 8 kHz like the web client: 48 kHz input is
+// point-sampled every 6th sample; other rates use linear interpolation.
 func Fingerprint(ctx context.Context, pcm []float32, sampleRate int, offsetSec float64) (string, error) {
 	return getDefaultEngine().Fingerprint(ctx, pcm, sampleRate, offsetSec)
 }
@@ -53,24 +53,17 @@ func (e *Engine) Fingerprint(ctx context.Context, pcm []float32, sampleRate int,
 	if sampleRate <= 0 {
 		return "", errors.New("invalid sample rate")
 	}
+	if math.IsNaN(offsetSec) || math.IsInf(offsetSec, 0) {
+		return "", errors.New("invalid offset")
+	}
 	n := FingerprintRate * FingerprintSeconds
 	step := float64(sampleRate) / FingerprintRate
 	start := offsetSec * float64(sampleRate)
-	last := start + float64(n-1)*step
-	if start < 0 || int(last)+1 > len(pcm) {
+	last := f64add(start, f64mul(float64(n-1), step))
+	if start < 0 || !(last < float64(len(pcm))) {
 		return "", fmt.Errorf("audio too short: need %d seconds from offset %.1fs", FingerprintSeconds, offsetSec)
 	}
-	in := make([]float32, n)
-	for i := range in {
-		pos := start + float64(i)*step
-		k := int(pos)
-		frac := float32(pos - float64(k))
-		if frac == 0 || k+1 >= len(pcm) {
-			in[i] = pcm[k]
-		} else {
-			in[i] = pcm[k]*(1-frac) + pcm[k+1]*frac
-		}
-	}
+	in := resampleAt(pcm, sampleRate, offsetSec, n)
 	raw, err := e.ExtractQueryFP(ctx, in)
 	if err != nil {
 		return "", err

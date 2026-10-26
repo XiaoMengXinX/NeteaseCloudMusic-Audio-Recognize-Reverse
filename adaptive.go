@@ -15,15 +15,16 @@ import (
 // value, so 6.9 is treated as 6), and the fingerprint's embedded duration must
 // be within adaptiveTolerance seconds of that form value. A recording whose
 // length is not directly usable is therefore moved to the nearest usable
-// length: earlier audio is kept and, if needed, silence is appended. Truncation
-// is only used when padding is not possible (recording longer than 16 s), as
-// dropping audio can remove the only distinctive part of a short clip.
+// length: earlier audio is kept and, if needed, silence is appended. Inside a
+// gap the smallest change wins; on a tie padding is preferred. Truncation is
+// also used for recordings beyond the largest bucket's range.
 var adaptiveBuckets = []int{2, 3, 4, 6, 9, 12, 15}
 
 const (
 	// AdaptiveKeep means all requested audio was used unchanged.
 	AdaptiveKeep = "keep"
-	// AdaptivePad means silence was appended to reach a usable length.
+	// AdaptivePad means the window was extended to a longer usable length.
+	// If the source ends before that length, the remainder is silence.
 	AdaptivePad = "pad"
 	// AdaptiveTruncate means the tail was dropped to reach a usable length.
 	AdaptiveTruncate = "truncate"
@@ -49,7 +50,10 @@ type FingerprintInfo struct {
 // chooseAdaptiveLength applies the endpoint's duration rules. It returns the
 // audio length to fingerprint, the form duration and the action taken.
 func chooseAdaptiveLength(sec float64) (used float64, form int, action string, err error) {
-	if math.IsNaN(sec) || math.IsInf(sec, 0) || sec < adaptiveMinSeconds {
+	if math.IsNaN(sec) || math.IsInf(sec, 0) {
+		return 0, 0, "", errors.New("invalid duration")
+	}
+	if sec < adaptiveMinSeconds {
 		return 0, 0, "", fmt.Errorf("audio too short: need at least %.1f s (1.5 s or more recommended)", adaptiveMinSeconds)
 	}
 	// Prefer keeping the full clip when a supported form duration is within
@@ -83,11 +87,10 @@ func chooseAdaptiveLength(sec float64) (used float64, form int, action string, e
 			upperF, upperTarget = b, float64(b)-adaptiveTolerance
 		}
 	}
-	if upperF == 0 {
+	// For every gap between the buckets, both bounds exist. The checks below
+	// are kept as a guard in case the bucket list is changed.
+	if lowerF == 0 || upperF == 0 {
 		return adaptiveMaxSeconds, adaptiveBuckets[len(adaptiveBuckets)-1], AdaptiveTruncate, nil
-	}
-	if lowerF == 0 {
-		return upperTarget, upperF, AdaptivePad, nil
 	}
 	if upperTarget-sec <= sec-lowerTarget {
 		return upperTarget, upperF, AdaptivePad, nil
@@ -95,31 +98,9 @@ func chooseAdaptiveLength(sec float64) (used float64, form int, action string, e
 	return lowerTarget, lowerF, AdaptiveTruncate, nil
 }
 
-// sampleWindow resamples a window of pcm to 8 kHz. Samples past the end of the
-// source are left as zero, which is how adaptive padding works.
-func sampleWindow(pcm []float32, sampleRate int, offsetSec float64, n int) []float32 {
-	out := make([]float32, n)
-	start := offsetSec * float64(sampleRate)
-	step := float64(sampleRate) / FingerprintRate
-	for i := 0; i < n; i++ {
-		pos := start + float64(i)*step
-		k := int(pos)
-		if k < 0 || k >= len(pcm) {
-			break
-		}
-		frac := float32(pos - float64(k))
-		if frac == 0 || k+1 >= len(pcm) {
-			out[i] = pcm[k]
-		} else {
-			out[i] = pcm[k]*(1-frac) + pcm[k+1]*frac
-		}
-	}
-	return out
-}
-
 // FingerprintAdaptive fingerprints a clip of the given length (seconds) at
 // offsetSec and adapts it to a duration accepted by the match endpoint. Pass
-// seconds <= 0 to use all audio available after offsetSec.
+// seconds <= 0 to use all audio available after offsetSec (capped at 16 s).
 //
 // The returned FingerprintInfo.Duration must be sent as the API "duration"
 // field; Client.MatchDuration / Client.RecognizeAdaptive do this
@@ -129,11 +110,14 @@ func (e *Engine) FingerprintAdaptive(ctx context.Context, pcm []float32, sampleR
 	if sampleRate <= 0 {
 		return "", info, errors.New("invalid sample rate")
 	}
+	if math.IsNaN(offsetSec) || math.IsInf(offsetSec, 0) {
+		return "", info, errors.New("invalid offset")
+	}
 	if offsetSec < 0 {
 		return "", info, errors.New("invalid offset")
 	}
 	start := offsetSec * float64(sampleRate)
-	if start >= float64(len(pcm)) {
+	if !(start < float64(len(pcm))) {
 		return "", info, errors.New("offset is past the end of the audio")
 	}
 	available := (float64(len(pcm)) - start) / float64(sampleRate)
@@ -149,7 +133,7 @@ func (e *Engine) FingerprintAdaptive(ctx context.Context, pcm []float32, sampleR
 	if n < fftLen {
 		return "", info, fmt.Errorf("audio too short: %d samples", n)
 	}
-	in := sampleWindow(pcm, sampleRate, offsetSec, n)
+	in := resampleAt(pcm, sampleRate, offsetSec, n)
 	raw, err := fingerprintRawSamples(in)
 	if err != nil {
 		return "", info, err

@@ -2,8 +2,8 @@ package ncmrecognize
 
 import "math"
 
-// kissFFT is a float32 radix-2/3/4/5 Cooley-Tukey FFT identical to the
-// KISS FFT implementation embedded in afp.wasm (forward transform only).
+// kissFFT is a float32 Cooley-Tukey FFT matching the KISS FFT implementation
+// embedded in afp.wasm for power-of-two sizes (forward transform only).
 type kissFFT struct {
 	n       int
 	factors []int // (p, m) pairs, as produced by kiss_fft's kf_factor
@@ -22,7 +22,9 @@ func newKissFFT(n int) *kissFFT {
 	return k
 }
 
-// factor reproduces kiss_fft's kf_factor: prefer radix 4, then 2, then odd.
+// factor reproduces kiss_fft's kf_factor for a power-of-two n >= 2. The
+// butterfly implementation below only handles radix 2 and 4 (which cover
+// 2^k sizes).
 func (k *kissFFT) factor(n int) []int {
 	var out []int
 	p := 4
@@ -53,6 +55,13 @@ func f32mul(a, b float32) float32 { return math.Float32frombits(math.Float32bits
 func f32add(a, b float32) float32 { return math.Float32frombits(math.Float32bits(a + b)) }
 func f32sub(a, b float32) float32 { return math.Float32frombits(math.Float32bits(a - b)) }
 
+// float64 barriers, used by the resampler so that the sample position is
+// computed with the same rounding on every architecture (Go fuses a*b+c into
+// FMA on arm64 and on amd64 with GOAMD64>=v3).
+func f64mul(a, b float64) float64 { return math.Float64frombits(math.Float64bits(a * b)) }
+func f64add(a, b float64) float64 { return math.Float64frombits(math.Float64bits(a + b)) }
+func f64sub(a, b float64) float64 { return math.Float64frombits(math.Float64bits(a - b)) }
+
 func cmul(a, b complex64) complex64 {
 	ar, ai, br, bi := real(a), imag(a), real(b), imag(b)
 	rr := f32sub(f32mul(ar, br), f32mul(ai, bi))
@@ -60,7 +69,8 @@ func cmul(a, b complex64) complex64 {
 	return complex(rr, ri)
 }
 
-// exec runs a forward transform of in into out (natural order, out may alias in).
+// exec runs a forward transform of in into out (natural order).
+// out and in must not alias: the recursive work buffers are not in-place safe.
 func (k *kissFFT) exec(out, in []complex64) {
 	k.work(out, in, 1, 1, k.factors)
 }
@@ -86,7 +96,7 @@ func (k *kissFFT) work(fout, f []complex64, fstride, inStride int, factors []int
 	case 4:
 		k.bfly4(fout, fstride, m)
 	default:
-		panic("kissFFT: only radix 2 and 4 are implemented (n must factor as 2^a*4^b)")
+		panic("kissFFT: unsupported radix (size must be a power of two)")
 	}
 }
 

@@ -123,14 +123,14 @@ func fingerprintRaw(pcm []float32) ([]byte, error) {
 
 // fingerprintRawSamples computes the raw (encrypted) fingerprint for an
 // arbitrary length of 8 kHz mono PCM (at least one 2048-sample FFT frame).
-// The embedded duration is len(pcm)/8000.
+// The embedded duration is len(pcm)/FingerprintRate.
 func fingerprintRawSamples(pcm []float32) ([]byte, error) {
 	spec, frames, err := spectrogram(pcm)
 	if err != nil {
 		return nil, err
 	}
 	peaks := extractPeaks(spec, frames)
-	return encryptFingerprint(buildPlaintext(peaks, float32(len(pcm))/8000))
+	return encryptFingerprint(buildPlaintext(peaks, float32(len(pcm))/FingerprintRate))
 }
 
 // decryptFingerprint is the inverse of encryptFingerprint, used by tests.

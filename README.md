@@ -21,27 +21,27 @@ fmt.Println(string(resp.Raw))                  // raw API JSON; resp.Code, resp.
 go install github.com/XiaoMengXinX/NeteaseCloudMusic-Audio-Recognize-Reverse/cmd/ncmrecognize@latest
 
 ncmrecognize song.mp3                                # whole recording, adaptive
-ncmrecognize -duration 6 song.mp3                    # fixed 6-second window
+ncmrecognize -duration 6 song.mp3                    # requested 6-second window
 ncmrecognize -offset 30 -duration 7.5 song.mp3       # custom offset/length
 ```
 
 The CLI prints the chosen fingerprint length and form duration to stderr:
 
 ```
-fingerprint: 7.000s audio, form duration 6s (truncate)
+fingerprint: 8.000s audio, form duration 9s (pad)
 ```
 
 ## Adaptive clip length (2–16 s)
 
 The NetEase endpoint only accepts certain `duration` values. The client adapts
 automatically: it keeps the full clip when possible, otherwise moves it to the
-nearest usable length (preferring silence padding over truncation) and sends the
-matching `duration`.
+nearest usable length (on a tie it pads with silence rather than truncating) and
+sends the matching `duration`.
 
 `Client.Duration` controls the requested window:
 
 - `0` (default) – all available audio, capped/adapted to 2–16 s;
-- `6` – fixed 6-second window;
+- `6` – requested 6-second window (clamped to the available audio);
 - any other value – that many seconds, adapted to a supported length.
 
 `Client.Offset` sets the start offset for `Recognize` / `RecognizeFile`;
@@ -88,7 +88,12 @@ The algorithm was recovered from the original Emscripten/embind `afp.wasm`
 build of the "hyai" fingerprint SDK (`hyai_1.2.0_client_1.0.0`). This
 repository contains only the pure-Go pipeline:
 
-1. **Input** – channel 0, point-sampled to 8 kHz.
+1. **Input** – channel 0, resampled to 8 kHz. The web client only accepts
+   48 kHz and point-samples every 6th sample; other rates are an extension and
+   use linear interpolation. Resampling uses the same non-fused float32
+   arithmetic as the wasm pipeline, so fingerprints are identical on arm64 and
+   amd64. (This deliberately does not reproduce the old Go wrapper's
+   architecture-dependent FMA result for non-48 kHz input.)
 2. **Spectrogram** – Hamming window `0.54 - 0.46*cos(2*pi*n/2047)`, FFT length
    2048, frame length 2048, hop 160 (20 ms); KISS FFT radix 4/2 in float32;
    stored value is `|X|²` for bins 0…1024.
@@ -121,9 +126,10 @@ addresses, function indices, parameter values and validation methodology
 go test ./...
 ```
 
-`testdata/` is git-ignored because it contains optional recorded test clips.
-Without it, the format/smoke tests are skipped; the synthetic fingerprint,
-FFT, logf and adaptive tests still run. No WebAssembly runtime is involved.
+`testdata/` is git-ignored because it contains optional recorded test clips,
+except for the small synthetic `sine.b64` golden fixture. The wasm golden
+fingerprint test therefore always runs; the format/smoke tests still skip
+without the optional local clips. No WebAssembly runtime is involved.
 
 ## Credits
 

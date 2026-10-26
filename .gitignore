@@ -32,8 +32,9 @@ go.work.sum
 # .idea/
 # .vscode/
 
-# local test fixtures and caches
-/testdata/
+# local test fixtures and caches; sine.b64 is a small synthetic golden fixture
+/testdata/*
+!/testdata/sine.b64
 .gocache/
 .gomodcache/
 .DS_Store

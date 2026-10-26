@@ -49,10 +49,8 @@ func decodeWAV(data []byte) (*Audio, error) {
 	if ch < 1 {
 		return nil, errors.New("decode wav: no channels")
 	}
+	// 8-bit WAV samples are unsigned; the offset is applied below.
 	scale := float32(int64(1) << (buf.SourceBitDepth - 1))
-	if buf.SourceBitDepth == 8 { // unsigned 8-bit
-		scale = 128
-	}
 	n := len(buf.Data) / ch
 	pcm := make([]float32, n)
 	for i := range pcm {

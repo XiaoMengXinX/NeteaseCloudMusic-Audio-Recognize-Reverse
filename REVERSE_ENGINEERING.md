@@ -78,6 +78,9 @@ The FFT is KISS FFT with radix-4/2 factors
 `(4,512)(4,128)(4,32)(4,8)(4,2)(2,1)`; twiddles are `exp(-2*pi*i*k/N)` in
 float32. The wasm does not fuse multiply-adds, so the Go port uses explicit
 float32 rounding barriers (`f32mul`, `f32add`, …) to stay bit-exact on arm64.
+The input resampler uses the same barriers (and float64 barriers for the
+sample position), which also keeps non-48 kHz fingerprints identical across
+architectures; 48 kHz input still matches the web client's point sampling.
 
 ## Peak pipeline (`$360`)
 

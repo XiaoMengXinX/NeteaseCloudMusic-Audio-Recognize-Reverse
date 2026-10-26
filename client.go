@@ -20,10 +20,11 @@ type Client struct {
 	HTTP   *http.Client // defaults to http.DefaultClient
 	Engine *Engine      // defaults to a shared engine
 
-	// Duration is the clip length in seconds used by Recognize, RecognizeFile
-	// and RecognizePCM. Zero (the default) means "all available audio",
-	// adapted to the endpoint's supported lengths (2-16 s). Set it to 6 for
-	// the fixed 6-second window, or to any other value for a custom length.
+	// Duration is the requested clip length in seconds used by Recognize,
+	// RecognizeFile and RecognizePCM. Zero (the default) means "all available
+	// audio", adapted to the endpoint's supported lengths (2-16 s). Set it to
+	// 6 for a 6-second window (clamped to the available audio), or to any
+	// other value for a custom length.
 	Duration float64
 	// Offset is the start offset in seconds used by Recognize and
 	// RecognizeFile. RecognizePCM takes its offset as an argument.
@@ -37,7 +38,7 @@ type Response struct {
 	Raw  json.RawMessage `json:"-"`
 }
 
-// Recognize fingerprints the audio (wav/mp3 bytes) and queries the API.
+// Recognize fingerprints the audio (wav/mp3/flac/ogg bytes) and queries the API.
 func (c *Client) Recognize(ctx context.Context, audio []byte) (*Response, error) {
 	a, err := Decode(audio)
 	if err != nil {
@@ -56,8 +57,8 @@ func (c *Client) RecognizeFile(ctx context.Context, path string) (*Response, err
 }
 
 // RecognizePCM queries the API with mono PCM samples (first channel) starting
-// at offsetSec. The clip length is c.Duration (0 = all available audio, 6 = the
-// fixed 6-second window).
+// at offsetSec. The clip length is c.Duration (0 = all available audio, 6 = a
+// 6-second window clamped to the available audio).
 func (c *Client) RecognizePCM(ctx context.Context, pcm []float32, sampleRate int, offsetSec float64) (*Response, error) {
 	return c.RecognizeAdaptive(ctx, pcm, sampleRate, offsetSec, c.Duration)
 }
@@ -69,7 +70,8 @@ func (c *Client) Match(ctx context.Context, fingerprint string) (*Response, erro
 
 // RecognizeAdaptive decodes nothing: it fingerprints the given PCM with an
 // adaptive clip length and sends the matching duration to the API. seconds is
-// the clip length starting at offsetSec; <= 0 means all available audio.
+// the clip length starting at offsetSec; <= 0 means all available audio
+// (capped at 16 s).
 func (c *Client) RecognizeAdaptive(ctx context.Context, pcm []float32, sampleRate int, offsetSec, seconds float64) (*Response, error) {
 	var fp string
 	var info FingerprintInfo
