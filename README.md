@@ -127,7 +127,7 @@ of the normal build.
 
 ## Credits
 
-- Original Node.js implementation: Aki Nazuki / `akinazuki`.
+- [akinazuki/NeteaseCloudMusic-Audio-Recognize](https://github.com/akinazuki/NeteaseCloudMusic-Audio-Recognize)
 - [MicroCBer/BeatSaverSongData](https://github.com/MicroCBer/BeatSaverSongData)
 - The `hyai` audio-fingerprint SDK embedded in the NetEase plugin.
 
