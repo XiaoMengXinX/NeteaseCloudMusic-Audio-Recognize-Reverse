@@ -2,6 +2,8 @@
 
 This document records how the fingerprint algorithm in `afp.wasm` was recovered
 and how the pure-Go implementation in this repository was validated against it.
+The wasm itself is **not** included here: this repository ships only the pure-Go
+port.
 
 ## Module overview
 
@@ -18,8 +20,9 @@ fingerprint SDK:
 
 The module has 27 imports (`a` … `A`, embind), 551 functions and a 16 MB memory.
 Function indices in the text format start at 27 (the imports), so wasm function
-index = `$N + 27`. The export section was patched at load time to expose the
-embind invokers and internal functions (see `oracle_*_test.go`).
+index = `$N + 27`. During analysis the export section was patched at load time
+to expose the Embind invokers and internal functions; that development-only
+oracle is not included in this repository.
 
 ## Runtime tracing
 
@@ -163,20 +166,24 @@ in our sample; padding is preferred because it never discards content.
 
 ## Validation
 
-- `go test -tags oracle ./...` compares the native implementation against the
-  original wasm **after decrypting and decompressing** both fingerprints.
+The native implementation was compared against the original wasm during
+development, before the wasm oracle harness was removed from this repository:
+
+- Both implementations' fingerprints were decrypted and decompressed; the
+  serialized plaintext was byte-identical.
 - Covered inputs: 100/440/1000/3800 Hz tones, a frequency sequence, white
   noise, a music-like mix, and the two recorded `2026-10-26 *.ogg` clips.
-  The serialized plaintext is byte-identical in all cases.
 - End-to-end: both clips are recognized as MyGO!!!!! songs through
   `interface.music.163.com` with the pure-Go pipeline.
 
 ## Reproducing the analysis
 
-- `afp.wasm` is disassembled with binaryen:
-  `wasm-dis afp.wasm -o afp.wat`
-- `oracle_engine_test.go` loads the wasm with wazero, patches the export
-  section to expose internal functions, and provides the test oracle.
-- `oracle_spec_test.go` dumps the internal power spectrogram; the native
-  spectrogram matches all 295 200 float32 values for a 6 s test signal.
-- `logf_test.go` compares `logf32` with wasm's `$55` on 200 000 random values.
+The original `afp.wasm` is not shipped in this repository. To repeat the
+analysis, obtain it from the NetEase plugin or the upstream source, then:
+
+- disassemble it with binaryen: `wasm-dis afp.wasm -o afp.wat`
+- the development-only oracle (not included here) loaded it with wazero,
+  patched the export section to expose internal functions, and compared the
+  power spectrogram and `logf32` output against the Go port; the native
+  spectrogram matched all 295 200 float32 values for a 6 s test signal, and
+  `logf32` matched on 200 000 random values.

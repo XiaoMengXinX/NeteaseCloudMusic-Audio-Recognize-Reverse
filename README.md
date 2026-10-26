@@ -3,8 +3,9 @@
 A **pure-Go** reimplementation of the NetEase Cloud Music browser plugin's
 `afp.wasm` audio-fingerprint algorithm, plus the reverse-engineering notes.
 
-The runtime needs no cgo, no WebAssembly runtime and no Node.js. `afp.wasm` is
-kept only as an optional test oracle (`-tags oracle`).
+The repository ships no WebAssembly file and has no WebAssembly runtime
+dependency: the fingerprint algorithm is implemented entirely in Go. The
+original `afp.wasm` was only used as the reference during reverse engineering.
 
 ```go
 import ncm "github.com/XiaoMengXinX/NeteaseCloudMusic-Audio-Recognize-Reverse"
@@ -83,8 +84,9 @@ and pass PCM to `FingerprintAdaptive` / `Client.RecognizePCM`.
 
 ## How it works
 
-`afp.wasm` is an Emscripten/embind build of the "hyai" fingerprint SDK
-(`hyai_1.2.0_client_1.0.0`). The recovered pipeline, implemented natively:
+The algorithm was recovered from the original Emscripten/embind `afp.wasm`
+build of the "hyai" fingerprint SDK (`hyai_1.2.0_client_1.0.0`). This
+repository contains only the pure-Go pipeline:
 
 1. **Input** – channel 0, point-sampled to 8 kHz.
 2. **Spectrogram** – Hamming window `0.54 - 0.46*cos(2*pi*n/2047)`, FFT length
@@ -106,24 +108,22 @@ and pass PCM to `FingerprintAdaptive` / `Client.RecognizePCM`.
 
 Go's `compress/zlib` produces a valid but not byte-identical deflate stream
 compared to the wasm's zlib 1.2.11. The decrypted/decompressed fingerprint data
-is byte-identical (verified by the oracle tests) and the API accepts the
-Go-produced stream.
+matches the original implementation and the API accepts the Go-produced
+stream.
 
-See [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) for wasm addresses, function
-indices, parameter values and the validation methodology.
+See [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) for the recovered wasm
+addresses, function indices, parameter values and validation methodology
+(historical analysis; the wasm itself is not shipped here).
 
 ## Tests
 
 ```bash
-go test ./...                # native implementation
-go test -tags oracle ./...   # additionally compares against afp.wasm
+go test ./...
 ```
 
 `testdata/` is git-ignored because it contains optional recorded test clips.
 Without it, the format/smoke tests are skipped; the synthetic fingerprint,
-FFT, logf, adaptive and oracle tests still run. The oracle build needs
-`afp.wasm` (committed) and uses wazero as a test-only dependency. It is not part
-of the normal build.
+FFT, logf and adaptive tests still run. No WebAssembly runtime is involved.
 
 ## Credits
 
